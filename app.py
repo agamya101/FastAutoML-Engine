@@ -85,6 +85,9 @@ if uploaded_file is not None:
         kf = KFold(n_splits=5, shuffle=True, random_state=42)
         round_num = 1
         
+        # Map to track historical scores to pull the final validation MAE
+        final_round_maes = {}
+        
         # Keep looping until 1 best combination remains or we hit 100% data budget
         while len(current_pool) > 1 and data_budget_pct <= 1.0:
             current_rows = int(len(X) * data_budget_pct)
@@ -116,6 +119,8 @@ if uploaded_file is not None:
                 custom_score = avg_mae + (1.96 * np.sqrt(variance_mae))
                 
                 round_results.append({'features': combo, 'score': custom_score, 'mae': avg_mae})
+                # Cache the true cross-validation MAE score
+                final_round_maes[tuple(combo)] = avg_mae
             
             # Sort and keep top 25% (eliminate 75%)
             round_results = sorted(round_results, key=lambda x: x['score'])
@@ -135,6 +140,7 @@ if uploaded_file is not None:
         end_time = time.time()
         your_engine_time = end_time - start_time
         best_features = current_pool[0]
+        your_engine_mae = final_round_maes.get(tuple(best_features), round_results[0]['mae'])
         
         st.success("🎉 Optimization Complete!")
         
@@ -167,18 +173,26 @@ if uploaded_file is not None:
         
         col1, col2 = st.columns(2)
         with col1:
-            st.metric(label="⚡ Your Custom Engine Time", value=f"{your_engine_time:.4f} sec")
-            st.write("**Your Chosen Features:**")
+            st.markdown("#### ⚡ Your Successive Quartering Engine")
+            st.metric(label="Execution Time", value=f"{your_engine_time:.4f} sec")
+            st.metric(label="Model Validation MAE", value=f"{your_engine_mae:,.2f}")
+            st.write("**Chosen Features:**")
             st.code(f"{best_features}")
             
         with col2:
-            st.metric(label="🐢 Brute-Force Grid Search Time", value=f"{benchmark_time:.4f} sec", delta=f"{((benchmark_time - your_engine_time)/benchmark_time)*100:.1f}% Slower", delta_color="inverse")
+            st.markdown("#### 🐢 Brute-Force Grid Search")
+            st.metric(label="Execution Time", value=f"{benchmark_time:.4f} sec", 
+                      delta=f"{((benchmark_time - your_engine_time)/benchmark_time)*100:.1f}% Slower", 
+                      delta_color="inverse")
+            st.metric(label="True Optimal MAE", value=f"{best_benchmark_score:,.2f}")
             st.write("**True Optimal Features:**")
             st.code(f"{best_benchmark_features}")
             
         # Success check
+        st.write("---")
         if set(best_features) == set(best_benchmark_features):
             st.balloons()
-            st.success("✅ Perfect Match! Your aggressive elimination engine found the mathematically correct features in a fraction of the time!")
+            st.success("✅ **Perfect Match!** Your aggressive tournament elimination found the mathematically ideal features in a fraction of the time.")
         else:
-            st.warning("⚠️ Approximation Made: Your engine found a slightly different sub-optimal feature group, but saved significant compute time.")
+            mae_difference = your_engine_mae - best_benchmark_score
+            st.warning(f"⚠️ **Approximation Made:** Your engine prioritized runtime speed and chose a slightly different configuration. The MAE gap is only **{mae_difference:,.2f}**.")
